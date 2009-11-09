@@ -1,0 +1,6 @@
+; $Id$
+name = Twitter search
+description = Adds search functionality to the Twitter module.
+php = 5.2
+core = 6.x
+dependencies[] = twitter
