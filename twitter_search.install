@@ -84,7 +84,10 @@ function twitter_search_uninstall() {
   // Remove tables.
   drupal_uninstall_schema('twitter_search');
 
-  // @todo: Delete module variables.
+  // Delete settings from varible table.
+  $sql = "DELETE FROM {variable}
+          WHERE name LIKE 'twitter_search_%'";
+  db_query($sql);
 }
 
 /**
