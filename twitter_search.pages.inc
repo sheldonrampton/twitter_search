@@ -89,7 +89,7 @@ function twitter_search_add_form_submit($form, &$form_state) {
 }
 
 /**
- * Menu callback; delete a single Google Group.
+ * Menu callback; delete a single Twitter search.
  */
 function twitter_search_delete_confirm(&$form_state) {
   $twitter_search_id = check_plain(arg(4));

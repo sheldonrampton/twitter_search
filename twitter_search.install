@@ -60,7 +60,6 @@ function twitter_search_schema() {
         'default' => 0
       ),
     ),
-    //'primary key' => array('twitter_search_id', 'twitter_id'),
   );
 
   return $schema;
