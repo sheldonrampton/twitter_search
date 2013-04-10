@@ -1,5 +1,4 @@
 name = Twitter search
 description = Adds search functionality to the Twitter module.
-php = 5.2
-core = 6.x
+core = 7.x
 dependencies[] = twitter

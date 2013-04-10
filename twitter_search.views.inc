@@ -1,16 +1,16 @@
 <?php
 /**
  * @file
- *  Provide views data and handlers.
+ * Provide views data and handlers.
  */
 
 /**
- * Implementation of hook_views_data().
+ * Implements hook_views_data().
  */
 function twitter_search_views_data() {
   $data = array();
 
-   $data['twitter_search'] = array(
+  $data['twitter_search'] = array(
     'twitter_search_id' => array(
       'title' => t('twitter_search_id'),
       'help' => t('Unique identifier for each {twitter_search} string.'),
@@ -146,7 +146,7 @@ function twitter_search_views_data() {
     'table' => array(
       'group' => t('Twitter: Search'),
       'join' => array(
-      'twitter_search' => array(
+        'twitter_search' => array(
           'left_field' => 'twitter_search_id',
           'field' => 'twitter_search_id',
         ),

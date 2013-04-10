@@ -1,32 +1,32 @@
 <?php
 /**
  * @file
- *  Administration pages and code for the Twitter search module.
+ * Administration pages and code for the Twitter search module.
  */
 
 /**
  * Lists search strings.
  *
- * @return
- *  Page HTML.
+ * @return String
+ *   Page HTML.
  */
 function twitter_search_list_page() {
   // Get search strings from database.
   $sql = "SELECT twitter_search_id, search
           FROM {twitter_search}
           ORDER BY last_refresh";
-  $results = db_query($sql);
 
+  $results = db_query($sql);
   $header = array(t('Search'), t('Operations'));
 
   $rows = array();
-  while ($search = db_fetch_array($results)) {
+
+  while ($search = $results->fetchAssoc()) {
     $rows[] = array(
       check_plain($search['search']),
-      array('data' => l(t('delete'), 'admin/settings/twitter_search/delete/' . $search['twitter_search_id'])),
+      array('data' => l(t('delete'), 'admin/config/services/twitter/twitter_search/delete/' . $search['twitter_search_id'])),
     );
   }
-
   if (empty($rows)) {
     $rows[] = array(
       array(
@@ -37,16 +37,16 @@ function twitter_search_list_page() {
     );
   }
 
-  return theme('table', $header, $rows);
+  return theme('table', array('header' => $header, 'rows' => $rows));
 }
 
 /**
  * Administration form.
  *
- * @return
- *  FAPI array.
+ * @return Array
+ *   FAPI array.
  */
-function twitter_search_add_form() {
+function twitter_search_add_form($form, &$form_state) {
   $form['search_string'] = array(
     '#type' => 'textfield',
     '#title' => t('Text to search Twitter for'),
@@ -70,8 +70,8 @@ function twitter_search_add_form() {
  *
  * @see twitter_search_add_form()
  *
- * @return
- *  FAPI array.
+ * @return Array
+ *   FAPI array.
  */
 function twitter_search_add_form_submit($form, &$form_state) {
   $search = array(
@@ -84,20 +84,22 @@ function twitter_search_add_form_submit($form, &$form_state) {
   drupal_write_record('twitter_search', $search);
 
   drupal_set_message(t('Twitter search text saved.'), 'status');
-  $form_state['redirect'] = 'admin/settings/twitter_search';
+  $form_state['redirect'] = 'admin/config/services/twitter/twitter_search';
   return;
 }
 
 /**
  * Menu callback; delete a single Twitter search.
  */
-function twitter_search_delete_confirm(&$form_state) {
+function twitter_search_delete_confirm($form, &$form_state) {
   $twitter_search_id = check_plain(arg(4));
 
   $sql = "SELECT search
           FROM {twitter_search}
           WHERE twitter_search_id = %d";
-  $search_string = db_result(db_query($sql, $twitter_search_id));
+  $search_string = db_query("SELECT search
+          FROM {twitter_search}
+          WHERE twitter_search_id = :twitter_search_id", array(':twitter_search_id' => $twitter_search_id))->fetchField();
 
   $form['twitter_search_id'] = array(
     '#type' => 'value',
@@ -109,13 +111,13 @@ function twitter_search_delete_confirm(&$form_state) {
   );
 
   $message = t('Are you sure you want to delete the Twitter search "%search"?', array('%search' => $search_string));
-  $caption = '<p>'. t('This action cannot be undone.') .'</p>';
+  $caption = '<p>' . t('This action cannot be undone.') . '</p>';
 
-  return confirm_form($form, $message, 'admin/settings/twitter_search', $caption, t('Delete'));
+  return confirm_form($form, $message, 'admin/config/services/twitter/twitter_search', $caption, t('Delete'));
 }
 
 /**
- * Delete confirm sumbit handler.
+ * Delete confirm submit handler.
  *
  * @see twitter_search_delete_confirm()
  */
@@ -123,12 +125,12 @@ function twitter_search_delete_confirm_submit($form, &$form_state) {
   $twitter_search_id = check_plain($form_state['values']['twitter_search_id']);
   $search_string = check_plain($form_state['values']['search_string']);
 
-  $sql = "DELETE FROM {twitter_search}
-          WHERE twitter_search_id = %d";
-  $result = db_query($sql, $twitter_search_id);
+  $result = db_delete('twitter_search')
+    ->condition('twitter_search_id', $twitter_search_id)
+    ->execute();
 
   drupal_set_message(t('The search "%search" has been deleted.', array('%search' => $search_string)));
 
-  $form_state['redirect'] = 'admin/settings/twitter_search';
+  $form_state['redirect'] = 'admin/config/services/twitter/twitter_search';
   return;
 }

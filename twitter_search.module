@@ -2,43 +2,48 @@
 
 /**
  * @file
- *  Adds search API features to the Twitter module.
+ * Adds search API features to the Twitter module.
  */
 
 /**
- * Implementation of hook_perm().
+ * Implements hook_permission().
  */
-function twitter_search_perm() {
-  return array('administer twitter search');
+function twitter_search_permission() {
+  return array(
+    'administer twitter search' => array(
+      'title' => t('administer twitter search'),
+      'description' => t('Administer twitter search'),
+    ),
+  );
 }
 
 /**
- * Implementation of hook_views_api().
- *
+ * Implements hook_views_api().
  */
 function twitter_search_views_api() {
   return array('api' => '2.0');
 }
 
 /**
- * Implementation of hook_menu().
+ * Implements hook_menu().
  */
 function twitter_search_menu() {
   $items = array();
-	$items['admin/settings/twitter_search'] = array(
-		'title' => 'Twitter search',
-		'description' => 'Settings for the site\'s Twitter search integration.',
-		'page callback' => 'twitter_search_list_page',
-		'type' => MENU_NORMAL_ITEM,
-		'access arguments' => array('administer twitter search'),
+
+  $items['admin/config/services/twitter/twitter_search'] = array(
+    'title' => 'Twitter search',
+    'description' => 'Settings for the site\'s Twitter search integration.',
+    'page callback' => 'twitter_search_list_page',
+    'type' => MENU_LOCAL_TASK,
+    'access arguments' => array('administer twitter search'),
     'file' => 'twitter_search.pages.inc',
-	);
-  $items['admin/settings/twitter_search/list'] = array(
+  );
+  $items['admin/config/services/twitter/twitter_search/list'] = array(
     'title' => 'List',
     'type' => MENU_DEFAULT_LOCAL_TASK,
     'weight' => -25,
   );
-  $items['admin/settings/twitter_search/add'] = array(
+  $items['admin/config/services/twitter/twitter_search/add'] = array(
     'title' => 'Add Twitter search text',
     'page callback' => 'drupal_get_form',
     'page arguments' => array('twitter_search_add_form'),
@@ -46,7 +51,7 @@ function twitter_search_menu() {
     'access arguments' => array('administer twitter search'),
     'file' => 'twitter_search.pages.inc',
   );
-  $items['admin/settings/twitter_search/delete/%'] = array(
+  $items['admin/config/services/twitter/twitter_search/delete/%'] = array(
     'title' => 'Delete Twitter search text',
     'page callback' => 'drupal_get_form',
     'page arguments' => array('twitter_search_delete_confirm'),
@@ -54,12 +59,12 @@ function twitter_search_menu() {
     'access arguments' => array('administer twitter search'),
     'file' => 'twitter_search.pages.inc',
   );
-	return $items;
+  return $items;
 }
 
 
 /**
- * Implementation of hook_cron()
+ * Implements hook_cron().
  *
  * Imports new Twitter search statuses for site searches.
  */
@@ -67,27 +72,39 @@ function twitter_search_cron() {
   if (!variable_get('twitter_import', TRUE)) {
     return;
   }
-
   module_load_include('inc', 'twitter');
+  // Check if we can connect to Twitter before proceeding.
+  $twitter = twitter_connect();
+  if (!$twitter) {
+    return;
+  }
 
   // Get a list of search strings to update.
   $sql = "SELECT twitter_search_id, search, last_twitter_id
           FROM {twitter_search}
           ORDER BY last_refresh";
-  $results = db_query_range($sql, 0, 20);
+  $results = db_query($sql);
 
-  while ($search = db_fetch_array($results)) {
-    $statuses = twitter_search_fetch_search($search);
-
-    if (!empty($statuses)) {
-      // Store last time search was fetched so that we grab new searches
-      // first. Also store the last twitter id for each search so that we only
-      // pull updated tweets.
-      $sql = "UPDATE {twitter_search}
-              SET last_twitter_id = %n, last_refresh = %d
-              WHERE search = '%s'";
-      db_query($sql, $statuses[0]['twitter_id'], $_SERVER['REQUEST_TIME'], $search['search']);
+  try {
+    while ($search = $results->fetchAssoc()) {
+      $statuses = twitter_search_fetch_search($search['search']);
+      if (!empty($statuses)) {
+        // Store last time search was fetched so that we grab new searches
+        // first. Also store the last twitter id for each search so that we only
+        // pull updated tweets.
+        db_update('twitter_search')
+          ->fields(array(
+            'last_twitter_id' => $statuses[0]->twitter_id,
+            'last_refresh' => $_SERVER['REQUEST_TIME'],
+          ))
+          ->condition('search', $search['search'])
+          ->execute();
+      }
     }
+  }
+  catch (TwitterException $e) {
+    // The exception has already been logged so we do not need to do
+    // anything here apart from caching it.
   }
 }
 
@@ -96,80 +113,43 @@ function twitter_search_cron() {
  *
  * @see http://apiwiki.twitter.com/Twitter-Search-API-Method%3A+search
  *
- * @param $search
- *  Assoc array containing search string, search id, and last twitter id.
- * @param $cache
- *  Boolean. Whether or not to cache the Twitter statues.
+ * @param String $search
+ *   Assoc array containing search string, search id, and last twitter id.
+ *
+ * @return Boolean
+ *   Whether or not to cache the Twitter statues.
  */
-function twitter_search_fetch_search($search, $cache = TRUE) {
+function twitter_search_fetch_search($search) {
+  // Check if we can connect to Twitter before proceeding.
   module_load_include('inc', 'twitter');
-
-  $url = 'http://search.twitter.com/search.json?q=' . urlencode($search['search']);
-  if ($search['last_twitter_id']) {
-    $url .= '&since_id=' . $search['last_twitter_id'];
+  $twitter = twitter_connect();
+  if (!$twitter) {
+    return;
   }
-  $response = drupal_http_request($url, array(), 'GET');
 
-  if (_twitter_request_failure($response)) {
-    return array();
-  }
-  else {
-    // Process the response
-    $results = _twitter_search_convert_json_to_array($response->data);
-    if ($cache) {
-      foreach($results as $status) {
-        twitter_cache_status($status);
+  // Connect to the Twitter's API.
+  $twitter = twitter_connect();
+  $params = array();
 
-        // Store Twitter ID to map to searchs.
-        $row = array(
-          'twitter_id' => $status['twitter_id'],
-          'twitter_search_id' => $search['twitter_search_id'],
-        );
-        drupal_write_record('twitter_search_tweet', $row);
-      }
-    }
-    return $results;
+  // Fetch tweets.
+  $statuses = $twitter->search_tweets($search, $params);
+  foreach ($statuses as $status) {
+    twitter_status_save($status);
+    twitter_account_save($status->user);
   }
+  return $statuses;
 }
 
 /**
- * Internal JSON munging code.
+ * Tests whether search already exists.
  *
- * @param $data
- *  JSON string returned by Twitter.
+ * @param String $search
+ *   Assoc array containing search string, search id, and last twitter id.
+ *
+ * @return Boolean
+ *   Boolean. Whether or not to cache the Twitter statues.
  */
-function _twitter_search_convert_json_to_array($data) {
-  $results = array();
-  $json = json_decode($data);
-
-  if (!empty($json->results)) {
-    foreach($json->results as $status) {
-      $results[] = array(
-        'twitter_id' => $status->id,
-        'screen_name' => $status->from_user,
-        'created_at' => $status->created_at,
-        'created_time' => strtotime($status->created_at),
-        'text' => html_entity_decode($status->text),
-        'source' => html_entity_decode($status->source),
-        'in_reply_to_status_id' => isset($status->to_id) ? $status->to_id : NULL,
-        'in_reply_to_user_id' => $status->to_user_id,
-        'in_reply_to_screen_name' => isset($status->to_user) ? $status->to_user : NULL,
-        'truncated' => 0,
-      );
-
-      // If the screen name isn't already cached, save a partial user object with the tweet.
-      if (!db_result(db_query("SELECT * from {twitter} WHERE screen_name = '%s' LIMIT 1", $status->from_user))) {
-        $account = array(
-          'twitter_uid' => $status->from_user_id,
-          'screen_name' => $status->from_user,
-          'profile_image_url' => $status->profile_image_url,
-          'protected' => FALSE,
-          'last_refresh' => strtotime($status->created_at),
-        );
-        twitter_cache_account($account);
-      }
-    }
-  }
-
-  return $results;
+function twitter_search_already_exists($search) {
+  $result = db_query("SELECT search FROM {twitter_search} WHERE search = :search", array(':search' => $search))->fetchField();
+  return $result ? TRUE : FALSE;
 }
